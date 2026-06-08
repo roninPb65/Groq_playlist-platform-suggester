@@ -44,6 +44,7 @@ async function refreshSpotifyToken(token: any) {
 export const { handlers, auth, signIn, signOut } = NextAuth({
   trustHost: true,
   session: { strategy: "jwt" },
+  debug: true,
   providers: [
     Spotify({
       clientId: process.env.SPOTIFY_CLIENT_ID,
