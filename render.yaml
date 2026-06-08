@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: resonance
+    runtime: node
+    plan: free
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    autoDeploy: true
+    envVars:
+      - key: AUTH_SECRET
+        generateValue: true
+      - key: AUTH_TRUST_HOST
+        value: "true"
+      # Set these in the Render dashboard (Environment tab):
+      - key: AUTH_URL
+        sync: false
+      - key: SPOTIFY_CLIENT_ID
+        sync: false
+      - key: SPOTIFY_CLIENT_SECRET
+        sync: false
+      - key: LASTFM_API_KEY
+        sync: false
