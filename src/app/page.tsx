@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ConnectStep } from "@/components/ConnectStep";
+import { ApiKeyStep } from "@/components/ApiKeyStep";
 import { QuizStep } from "@/components/QuizStep";
 import { ResultStep } from "@/components/ResultStep";
 import type { GenerateResponse, QuizAnswers } from "@/lib/types";
@@ -20,10 +20,10 @@ const DEFAULT_ANSWERS: QuizAnswers = {
   count: 20,
 };
 
-type Step = "connect" | "quiz" | "result";
+type Step = "key" | "quiz" | "result";
 
 export default function Home() {
-  const [step, setStep] = useState<Step>("connect");
+  const [step, setStep] = useState<Step>("key");
   const [groqKey, setGroqKeyState] = useState("");
   const [answers, setAnswers] = useState<QuizAnswers>(DEFAULT_ANSWERS);
   const [busy, setBusy] = useState(false);
@@ -74,15 +74,11 @@ export default function Home() {
       </div>
       <p className="tagline">
         The soundtrack of your life — rebuilt from where you were and when, and turned into a
-        playlist on your Spotify.
+        playlist you can scan and share.
       </p>
 
-      {step === "connect" && (
-        <ConnectStep
-          groqKey={groqKey}
-          setGroqKey={setGroqKey}
-          onContinue={() => setStep("quiz")}
-        />
+      {step === "key" && (
+        <ApiKeyStep groqKey={groqKey} setGroqKey={setGroqKey} onContinue={() => setStep("quiz")} />
       )}
 
       {step === "quiz" && (
@@ -91,7 +87,7 @@ export default function Home() {
             answers={answers}
             setAnswers={setAnswers}
             onGenerate={generate}
-            onBack={() => setStep("connect")}
+            onBack={() => setStep("key")}
             busy={busy}
           />
           {busy && (
@@ -113,9 +109,10 @@ export default function Home() {
       )}
 
       <p className="foot">
-        Your Groq key stays in this browser tab and is sent only with your own requests — it is
-        never stored on the server. Spotify is used to create the playlist on your account.
-        Built as an open scaffold; see the README to extend grounding and similarity.
+        Your Groq key stays in this browser tab and is sent only with your own request — never
+        stored on the server. Playlists are created on the app&apos;s Spotify account and shared
+        publicly via link and QR, so anyone can open and save them. See the README to extend
+        grounding and similarity.
       </p>
     </main>
   );

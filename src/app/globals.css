@@ -319,6 +319,29 @@ select:focus {
   padding: 24px 0;
 }
 
+.share {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fffdf8;
+}
+
+.share .qr {
+  width: 140px;
+  height: 140px;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+.share .share-actions {
+  flex: 1;
+  min-width: 200px;
+}
+
 .foot {
   margin-top: 40px;
   font-size: 13px;
