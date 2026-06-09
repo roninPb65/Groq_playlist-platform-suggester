@@ -11,10 +11,21 @@ import { NextRequest, NextResponse } from "next/server";
 
 const AUTHORIZE = "https://accounts.spotify.com/authorize";
 const TOKEN_URL = "https://accounts.spotify.com/api/token";
-const SCOPES = "playlist-modify-public playlist-modify-private user-read-private";
+// Only the scope we actually use: creating public playlists on the owner account.
+// playlist-modify-private and user-read-private were requested previously but
+// are not used by this app — requesting unused scopes violates least-privilege.
+const SCOPES = "playlist-modify-public";
 
 function redirectUri(): string {
   const base = (process.env.APP_URL || "").replace(/\/$/, "");
+  // Enforce HTTPS in production. http://127.0.0.1 is the only allowed
+  // non-HTTPS URI per Spotify's redirect URI policy.
+  if (!base.startsWith("https://") && !base.startsWith("http://127.0.0.1")) {
+    throw new Error(
+      `APP_URL must use HTTPS in production (got: ${base}). ` +
+      "Only http://127.0.0.1 is allowed for local development.",
+    );
+  }
   return `${base}/api/spotify/setup`;
 }
 
