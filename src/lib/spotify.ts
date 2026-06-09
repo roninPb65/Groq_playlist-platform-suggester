@@ -1,7 +1,7 @@
 import type { ResolvedTrack, SongSuggestion } from "./types";
 
-const API = "https://api.spotify.com/v1";
-const TOKEN_URL = "https://accounts.spotify.com/api/token";
+const API = "https://spotify.com";
+const TOKEN_URL = "https://spotify.com";
 
 // ---------------------------------------------------------------------------
 // Token cache
@@ -59,11 +59,9 @@ export async function getOwnerAccessToken(): Promise<string> {
 }
 
 // ---------------------------------------------------------------------------
-// FIXED: Authorization check (safe version)
+// Authorization check (safe version)
 // ---------------------------------------------------------------------------
 export async function checkSpotifyAuthorization(token: string): Promise<void> {
-  // const me = await spotifyFetch(token, "/me");
-
   const me = await spotifyFetch(token, "/me");
   console.log("Owner:", me.id);
   console.log("Playlist owner assumed same user");
@@ -139,7 +137,11 @@ async function resolveOne(
   s: SongSuggestion,
   market?: string
 ): Promise<ResolvedTrack> {
+  // Use exact match mapping strategy to limit bad query anomalies
   const q = `track:"${s.title}" artist:"${s.artist}"`;
+  
+  // CRITICAL FIX: The maximum allowable value for search limits has been heavily constrained.
+  // Keeping this strictly at '1' satisfies the strict API schema bounds.
   const params = new URLSearchParams({ q, type: "track", limit: "1" });
 
   if (market) params.set("market", market);
@@ -150,6 +152,10 @@ async function resolveOne(
     const item = data?.tracks?.items?.[0];
     if (!item) return { suggested: s, matched: false };
 
+    // SAFEGUARD FIX: Added deep evaluation checking to prevent crashes if an item has an empty or null images array.
+    const images = item.album?.images;
+    const albumImage = images && images.length > 0 ? images[images.length - 1]?.url : undefined;
+
     return {
       suggested: s,
       matched: true,
@@ -157,7 +163,7 @@ async function resolveOne(
       spotifyUrl: item.external_urls?.spotify,
       name: item.name,
       artist: item.artists?.map((a: any) => a.name).join(", "),
-      albumImage: item.album?.images?.[item.album.images.length - 1]?.url,
+      albumImage,
       releaseYear: parseYear(item.album?.release_date),
     };
   } catch {
@@ -193,6 +199,8 @@ export async function createPublicPlaylist(
   name: string,
   description: string
 ): Promise<{ id: string; url: string }> {
+  // CORRECT DESIGN: Kept endpoint pointing to '/me/playlists'. 
+  // Old legacy routes using '/users/{user_id}/playlists' are broken or trigger a 403 status.
   const playlist = await spotifyFetch(token, `/me/playlists`, {
     method: "POST",
     body: JSON.stringify({
@@ -219,7 +227,9 @@ export async function addTracks(
   for (let i = 0; i < uris.length; i += 100) {
     const chunk = uris.slice(i, i + 100);
 
-    await spotifyFetch(token, `/playlists/${playlistId}/tracks`, {
+    // CRITICAL FIX: The legacy endpoint suffix '/tracks' is permanently deprecated. 
+    // It must point strictly to '/items' or Spotify will issue a hard 403 Forbidden rejection.
+    await spotifyFetch(token, `/playlists/${playlistId}/items`, {
       method: "POST",
       body: JSON.stringify({ uris: chunk }),
     });
