@@ -59,6 +59,19 @@ export async function getOwnerAccessToken(): Promise<string> {
 }
 
 // ---------------------------------------------------------------------------
+// FIXED: Authorization check (safe version)
+// ---------------------------------------------------------------------------
+export async function checkSpotifyAuthorization(token: string): Promise<void> {
+  const me = await spotifyFetch(token, "/me");
+
+  if (!me || !me.id) {
+    throw new Error(
+      "Spotify token is invalid. Please re-run /api/spotify/setup and replace SPOTIFY_REFRESH_TOKEN."
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Spotify fetch with retry (429 handling)
 // ---------------------------------------------------------------------------
 async function spotifyFetch(
@@ -143,7 +156,7 @@ async function resolveOne(
       albumImage: item.album?.images?.[item.album.images.length - 1]?.url,
       releaseYear: parseYear(item.album?.release_date),
     };
-  } catch (err) {
+  } catch {
     return { suggested: s, matched: false };
   }
 }
