@@ -91,31 +91,46 @@ async function spotifyFetch(
     },
   });
 
+  // 1. Handle Rate Limiting
   if (res.status === 429) {
     const retryAfter = parseInt(res.headers.get("Retry-After") ?? "", 10);
-
     const waitMs =
       Number.isFinite(retryAfter) && retryAfter > 0
         ? retryAfter * 1000
         : Math.min(1000 * 2 ** _attempt, 30_000);
 
     if (_attempt >= 4) {
-      throw new Error(
-        `Spotify rate limit exceeded on ${path}. Try again later.`
-      );
+      throw new Error(`Spotify rate limit exceeded on ${path}. Try again later.`);
     }
 
     await new Promise((r) => setTimeout(r, waitMs));
     return spotifyFetch(token, path, init, _attempt + 1);
   }
 
+  // 2. Read raw response text safely first to avoid crashing
+  const textBody = await res.text();
+
+  // 3. Handle non-2xx Network Errors
   if (!res.ok) {
-    const detail = await res.text().catch(() => "");
-    throw new Error(`Spotify ${res.status} on ${path}: ${detail}`);
+    throw new Error(`Spotify error ${res.status} on ${path}: ${textBody.slice(0, 200)}`);
   }
 
-  return res.status === 204 ? null : res.json();
+  // 4. Handle empty successful responses (like 204 No Content or empty strings)
+  if (res.status === 204 || !textBody.trim()) {
+    return null;
+  }
+
+  // 5. Explicit HTML check to give you a descriptive debugging error
+  if (textBody.trim().startsWith("<!DOCTYPE") || textBody.trim().startsWith("<html")) {
+    throw new Error(
+      `Expected JSON from Spotify but received an HTML page (Status ${res.status}). Your endpoint path or environment routing might be broken.`
+    );
+  }
+
+  // 6. Safe JSON parse execution
+  return JSON.parse(textBody);
 }
+
 
 // ---------------------------------------------------------------------------
 // User ID
