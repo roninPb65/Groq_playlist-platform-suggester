@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/auth";
+import QRCode from "qrcode";
 import { buildPrompt } from "@/lib/prompt";
 import { getSongsFromGroq } from "@/lib/groq";
 import { gatherGrounding } from "@/lib/grounding";
 import {
-  getCurrentUser,
+  getOwnerAccessToken,
+  getOwnerUserId,
   resolveTracks,
-  createPlaylist,
+  createPublicPlaylist,
   addTracks,
 } from "@/lib/spotify";
 import type { GenerateResponse, QuizAnswers } from "@/lib/types";
@@ -15,17 +16,6 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
-  const session = await auth();
-  const accessToken = (session as any)?.accessToken as string | undefined;
-  const sessionError = (session as any)?.error as string | undefined;
-
-  if (!accessToken || sessionError) {
-    return NextResponse.json(
-      { error: "Please connect your Spotify account (or reconnect — the session expired)." },
-      { status: 401 },
-    );
-  }
-
   let body: { groqApiKey?: string; answers?: QuizAnswers };
   try {
     body = await req.json();
@@ -47,10 +37,9 @@ export async function POST(req: NextRequest) {
     // 1. Optional grounding (returns "" until you wire a provider).
     const grounding = await gatherGrounding(answers);
 
-    // 2. Ask Groq for a confidence-tagged song list (using the user's own key).
+    // 2. Ask Groq for a confidence-tagged song list (using the visitor's own key).
     const prompt = buildPrompt(answers, grounding);
     const { playlistName, tracks: suggestions } = await getSongsFromGroq(groqApiKey, prompt);
-
     if (suggestions.length === 0) {
       return NextResponse.json(
         { error: "The model didn't return any songs. Try adjusting your answers." },
@@ -58,10 +47,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 3. Resolve each suggestion to a real Spotify track.
-    const resolved = await resolveTracks(accessToken, suggestions, answers.market);
+    // 3. Use the OWNER token (no visitor login) to resolve + build the playlist.
+    const token = await getOwnerAccessToken();
+    const resolved = await resolveTracks(token, suggestions, answers.market);
     const matched = resolved.filter((r) => r.matched && r.uri);
-
     if (matched.length === 0) {
       return NextResponse.json(
         { error: "None of the suggested songs were found on Spotify. Try again." },
@@ -69,17 +58,20 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 4. Create the playlist on the user's account and add the tracks.
-    const me = await getCurrentUser(accessToken);
+    const userId = await getOwnerUserId(token);
     const description =
-      `Made with Resonance for ${answers.place || "you"}` +
+      `Made with Resonance${answers.place ? ` for ${answers.place}` : ""}` +
       (answers.year ? `, ${answers.year}.` : ".");
-    const playlist = await createPlaylist(accessToken, me.id, playlistName, description);
-    await addTracks(accessToken, playlist.id, matched.map((m) => m.uri!));
+    const playlist = await createPublicPlaylist(token, userId, playlistName, description);
+    await addTracks(token, playlist.id, matched.map((m) => m.uri!));
+
+    // 4. A QR code of the public playlist link, so anyone can scan and listen.
+    const qrDataUrl = await QRCode.toDataURL(playlist.url, { width: 320, margin: 1 });
 
     const response: GenerateResponse = {
       playlistName,
       playlistUrl: playlist.url,
+      qrDataUrl,
       matchedCount: matched.length,
       suggestedCount: suggestions.length,
       tracks: resolved,
