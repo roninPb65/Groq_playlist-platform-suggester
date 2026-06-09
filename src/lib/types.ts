@@ -36,6 +36,7 @@ export interface ResolvedTrack {
 export interface GenerateResponse {
   playlistName: string;
   playlistUrl: string;
+  qrDataUrl: string;
   matchedCount: number;
   suggestedCount: number;
   tracks: ResolvedTrack[];

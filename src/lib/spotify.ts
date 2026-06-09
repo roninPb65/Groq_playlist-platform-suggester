@@ -1,12 +1,55 @@
 import type { ResolvedTrack, SongSuggestion } from "./types";
 
 const API = "https://api.spotify.com/v1";
+const TOKEN_URL = "https://accounts.spotify.com/api/token";
 
-async function spotifyFetch(
-  token: string,
-  path: string,
-  init?: RequestInit,
-): Promise<any> {
+// In-memory cache (resets on restart, which is fine on a single instance).
+let cachedToken: { value: string; expiresAt: number } | null = null;
+let cachedUserId: string | null = null;
+
+// Get an access token for the OWNER account using the stored refresh token.
+// Every playlist is created on this one account, so visitors never log in.
+export async function getOwnerAccessToken(): Promise<string> {
+  if (cachedToken && Date.now() < cachedToken.expiresAt - 60_000) {
+    return cachedToken.value;
+  }
+
+  const clientId = process.env.SPOTIFY_CLIENT_ID;
+  const clientSecret = process.env.SPOTIFY_CLIENT_SECRET;
+  const refreshToken = process.env.SPOTIFY_REFRESH_TOKEN;
+  if (!clientId || !clientSecret || !refreshToken) {
+    throw new Error(
+      "Spotify owner credentials are not configured. Visit /api/spotify/setup once to generate SPOTIFY_REFRESH_TOKEN.",
+    );
+  }
+
+  const basic = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
+  const res = await fetch(TOKEN_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Authorization: `Basic ${basic}`,
+    },
+    body: new URLSearchParams({
+      grant_type: "refresh_token",
+      refresh_token: refreshToken,
+    }),
+  });
+
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    throw new Error(`Could not refresh the Spotify owner token (${res.status}). ${detail.slice(0, 150)}`);
+  }
+
+  const data = await res.json();
+  cachedToken = {
+    value: data.access_token,
+    expiresAt: Date.now() + data.expires_in * 1000,
+  };
+  return cachedToken.value;
+}
+
+async function spotifyFetch(token: string, path: string, init?: RequestInit): Promise<any> {
   const res = await fetch(`${API}${path}`, {
     ...init,
     headers: {
@@ -22,17 +65,14 @@ async function spotifyFetch(
   return res.status === 204 ? null : res.json();
 }
 
-export async function getCurrentUser(token: string): Promise<{ id: string; display_name: string }> {
+export async function getOwnerUserId(token: string): Promise<string> {
+  if (cachedUserId) return cachedUserId;
   const me = await spotifyFetch(token, "/me");
-  return { id: me.id, display_name: me.display_name };
+  cachedUserId = me.id;
+  return me.id;
 }
 
-// Resolve one suggestion to a real Spotify track.
-async function resolveOne(
-  token: string,
-  s: SongSuggestion,
-  market?: string,
-): Promise<ResolvedTrack> {
+async function resolveOne(token: string, s: SongSuggestion, market?: string): Promise<ResolvedTrack> {
   const q = `track:"${s.title}" artist:"${s.artist}"`;
   const params = new URLSearchParams({ q, type: "track", limit: "1" });
   if (market) params.set("market", market);
@@ -42,7 +82,6 @@ async function resolveOne(
     const item = data?.tracks?.items?.[0];
     if (!item) return { suggested: s, matched: false };
 
-    const releaseYear = parseYear(item.album?.release_date);
     return {
       suggested: s,
       matched: true,
@@ -51,14 +90,13 @@ async function resolveOne(
       name: item.name,
       artist: item.artists?.map((a: any) => a.name).join(", "),
       albumImage: item.album?.images?.[item.album.images.length - 1]?.url,
-      releaseYear,
+      releaseYear: parseYear(item.album?.release_date),
     };
   } catch {
     return { suggested: s, matched: false };
   }
 }
 
-// Resolve all suggestions with limited concurrency so we don't trip rate limits.
 export async function resolveTracks(
   token: string,
   suggestions: SongSuggestion[],
@@ -74,7 +112,8 @@ export async function resolveTracks(
   return results;
 }
 
-export async function createPlaylist(
+// Create a PUBLIC playlist so anyone with the link / QR can open it.
+export async function createPublicPlaylist(
   token: string,
   userId: string,
   name: string,
@@ -82,13 +121,12 @@ export async function createPlaylist(
 ): Promise<{ id: string; url: string }> {
   const playlist = await spotifyFetch(token, `/users/${userId}/playlists`, {
     method: "POST",
-    body: JSON.stringify({ name, description, public: false }),
+    body: JSON.stringify({ name, description, public: true }),
   });
   return { id: playlist.id, url: playlist.external_urls?.spotify };
 }
 
 export async function addTracks(token: string, playlistId: string, uris: string[]): Promise<void> {
-  // Spotify accepts up to 100 URIs per request.
   for (let i = 0; i < uris.length; i += 100) {
     const chunk = uris.slice(i, i + 100);
     await spotifyFetch(token, `/playlists/${playlistId}/tracks`, {
