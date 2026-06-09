@@ -36,7 +36,7 @@ export function ApiKeyStep({
         </p>
       </div>
 
-      <button className="btn accent" disabled={!groqKey.trim()} onClick={onContinue}>
+      <button className="btn accent"  onClick={onContinue}>
         Start →
       </button>
     </div>
