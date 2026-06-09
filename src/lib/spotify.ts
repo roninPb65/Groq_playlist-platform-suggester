@@ -1,7 +1,7 @@
 import type { ResolvedTrack, SongSuggestion } from "./types";
 
-const API = "https://spotify.com";
-const TOKEN_URL = "https://spotify.com";
+const API = "https://api.spotify.com/v1";
+const TOKEN_URL = "https://accounts.spotify.com/api/token";
 
 // ---------------------------------------------------------------------------
 // Token cache
@@ -59,9 +59,11 @@ export async function getOwnerAccessToken(): Promise<string> {
 }
 
 // ---------------------------------------------------------------------------
-// Authorization check (safe version)
+// FIXED: Authorization check (safe version)
 // ---------------------------------------------------------------------------
 export async function checkSpotifyAuthorization(token: string): Promise<void> {
+  // const me = await spotifyFetch(token, "/me");
+
   const me = await spotifyFetch(token, "/me");
   console.log("Owner:", me.id);
   console.log("Playlist owner assumed same user");
@@ -91,46 +93,31 @@ async function spotifyFetch(
     },
   });
 
-  // 1. Handle Rate Limiting
   if (res.status === 429) {
     const retryAfter = parseInt(res.headers.get("Retry-After") ?? "", 10);
+
     const waitMs =
       Number.isFinite(retryAfter) && retryAfter > 0
         ? retryAfter * 1000
         : Math.min(1000 * 2 ** _attempt, 30_000);
 
     if (_attempt >= 4) {
-      throw new Error(`Spotify rate limit exceeded on ${path}. Try again later.`);
+      throw new Error(
+        `Spotify rate limit exceeded on ${path}. Try again later.`
+      );
     }
 
     await new Promise((r) => setTimeout(r, waitMs));
     return spotifyFetch(token, path, init, _attempt + 1);
   }
 
-  // 2. Read raw response text safely first to avoid crashing
-  const textBody = await res.text();
-
-  // 3. Handle non-2xx Network Errors
   if (!res.ok) {
-    throw new Error(`Spotify error ${res.status} on ${path}: ${textBody.slice(0, 200)}`);
+    const detail = await res.text().catch(() => "");
+    throw new Error(`Spotify ${res.status} on ${path}: ${detail}`);
   }
 
-  // 4. Handle empty successful responses (like 204 No Content or empty strings)
-  if (res.status === 204 || !textBody.trim()) {
-    return null;
-  }
-
-  // 5. Explicit HTML check to give you a descriptive debugging error
-  if (textBody.trim().startsWith("<!DOCTYPE") || textBody.trim().startsWith("<html")) {
-    throw new Error(
-      `Expected JSON from Spotify but received an HTML page (Status ${res.status}). Your endpoint path or environment routing might be broken.`
-    );
-  }
-
-  // 6. Safe JSON parse execution
-  return JSON.parse(textBody);
+  return res.status === 204 ? null : res.json();
 }
-
 
 // ---------------------------------------------------------------------------
 // User ID
@@ -152,11 +139,7 @@ async function resolveOne(
   s: SongSuggestion,
   market?: string
 ): Promise<ResolvedTrack> {
-  // Use exact match mapping strategy to limit bad query anomalies
   const q = `track:"${s.title}" artist:"${s.artist}"`;
-  
-  // CRITICAL FIX: The maximum allowable value for search limits has been heavily constrained.
-  // Keeping this strictly at '1' satisfies the strict API schema bounds.
   const params = new URLSearchParams({ q, type: "track", limit: "1" });
 
   if (market) params.set("market", market);
@@ -165,11 +148,10 @@ async function resolveOne(
     const data = await spotifyFetch(token, `/search?${params.toString()}`);
 
     const item = data?.tracks?.items?.[0];
-    if (!item) return { suggested: s, matched: false };
 
-    // SAFEGUARD FIX: Added deep evaluation checking to prevent crashes if an item has an empty or null images array.
     const images = item.album?.images;
-    const albumImage = images && images.length > 0 ? images[images.length - 1]?.url : undefined;
+
+    if (!item) return { suggested: s, matched: false };
 
     return {
       suggested: s,
@@ -178,7 +160,8 @@ async function resolveOne(
       spotifyUrl: item.external_urls?.spotify,
       name: item.name,
       artist: item.artists?.map((a: any) => a.name).join(", "),
-      albumImage,
+      // albumImage: item.album?.images?.[item.album.images.length - 1]?.url,
+      albumImage: images && images.length > 0 ? images[images.length - 1].url : undefined,
       releaseYear: parseYear(item.album?.release_date),
     };
   } catch {
@@ -214,8 +197,6 @@ export async function createPublicPlaylist(
   name: string,
   description: string
 ): Promise<{ id: string; url: string }> {
-  // CORRECT DESIGN: Kept endpoint pointing to '/me/playlists'. 
-  // Old legacy routes using '/users/{user_id}/playlists' are broken or trigger a 403 status.
   const playlist = await spotifyFetch(token, `/me/playlists`, {
     method: "POST",
     body: JSON.stringify({
@@ -234,6 +215,21 @@ export async function createPublicPlaylist(
 // ---------------------------------------------------------------------------
 // Add tracks
 // ---------------------------------------------------------------------------
+// export async function addTracks(
+//   token: string,
+//   playlistId: string,
+//   uris: string[]
+// ): Promise<void> {
+//   for (let i = 0; i < uris.length; i += 100) {
+//     const chunk = uris.slice(i, i + 100);
+
+//     await spotifyFetch(token, `/playlists/${playlistId}/tracks`, {
+//       method: "POST",
+//       body: JSON.stringify({ uris: chunk }),
+//     });
+//   }
+// }
+
 export async function addTracks(
   token: string,
   playlistId: string,
@@ -242,14 +238,14 @@ export async function addTracks(
   for (let i = 0; i < uris.length; i += 100) {
     const chunk = uris.slice(i, i + 100);
 
-    // CRITICAL FIX: The legacy endpoint suffix '/tracks' is permanently deprecated. 
-    // It must point strictly to '/items' or Spotify will issue a hard 403 Forbidden rejection.
+    // FIX: Replaced '/tracks' with '/items' to match the updated Spotify API specification
     await spotifyFetch(token, `/playlists/${playlistId}/items`, {
       method: "POST",
       body: JSON.stringify({ uris: chunk }),
     });
   }
 }
+
 
 // ---------------------------------------------------------------------------
 // Helpers
