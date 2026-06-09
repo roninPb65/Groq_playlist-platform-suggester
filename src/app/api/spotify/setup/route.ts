@@ -12,8 +12,9 @@ import { NextRequest, NextResponse } from "next/server";
 const AUTHORIZE = "https://accounts.spotify.com/authorize";
 const TOKEN_URL = "https://accounts.spotify.com/api/token";
 // Only the scope we actually use: creating public playlists on the owner account.
-// playlist-modify-private and user-read-private were requested previously but
-// are not used by this app — requesting unused scopes violates least-privilege.
+// This MUST match REQUIRED_SCOPES in src/lib/spotify.ts.
+// If you add scopes here without updating spotify.ts (or vice-versa) you will
+// get 403 errors on write endpoints at runtime.
 const SCOPES = "playlist-modify-public";
 
 function redirectUri(): string {
@@ -45,11 +46,12 @@ export async function GET(req: NextRequest) {
 
   // Step 1: no code yet -> send the owner to Spotify's consent screen.
   if (!code) {
-    const params = new URLSearchParams({
+     const params = new URLSearchParams({
       client_id: clientId,
       response_type: "code",
       redirect_uri: redirectUri(),
       scope: SCOPES,
+      show_dialog: "true",
     });
     return NextResponse.redirect(`${AUTHORIZE}?${params.toString()}`);
   }
