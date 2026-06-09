@@ -5,6 +5,7 @@ import { getSongsFromGroq } from "@/lib/groq";
 import { gatherGrounding } from "@/lib/grounding";
 import {
   getOwnerAccessToken,
+  checkSpotifyAuthorization,
   resolveTracks,
   createPublicPlaylist,
   addTracks,
@@ -48,6 +49,12 @@ export async function POST(req: NextRequest) {
 
     // 3. Use the OWNER token (no visitor login) to resolve + build the playlist.
     const token = await getOwnerAccessToken();
+
+    // Authorization gate — verify the token has the required Spotify scopes
+    // BEFORE attempting any write operations. This converts a cryptic
+    // "403 on /playlists/{id}/tracks" into a clear, actionable error message.
+    await checkSpotifyAuthorization(token);
+
     const resolved = await resolveTracks(token, suggestions, answers.market);
     const matched = resolved.filter((r) => r.matched && r.uri);
     if (matched.length === 0) {
