@@ -113,13 +113,15 @@ export async function resolveTracks(
 }
 
 // Create a PUBLIC playlist so anyone with the link / QR can open it.
+// Uses /me/playlists (not /users/{id}/playlists) — the latter returns 403
+// for most apps. /me/playlists infers the owner from the access token.
 export async function createPublicPlaylist(
   token: string,
-  userId: string,
+  _userId: string,  // kept for call-site compatibility; not used in path
   name: string,
   description: string,
 ): Promise<{ id: string; url: string }> {
-  const playlist = await spotifyFetch(token, `/users/${userId}/playlists`, {
+  const playlist = await spotifyFetch(token, `/me/playlists`, {
     method: "POST",
     body: JSON.stringify({ name, description, public: true }),
   });
