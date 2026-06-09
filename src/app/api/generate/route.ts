@@ -5,7 +5,6 @@ import { getSongsFromGroq } from "@/lib/groq";
 import { gatherGrounding } from "@/lib/grounding";
 import {
   getOwnerAccessToken,
-  getOwnerUserId,
   resolveTracks,
   createPublicPlaylist,
   addTracks,
@@ -58,11 +57,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const userId = await getOwnerUserId(token);
     const description =
       `Made with Resonance${answers.place ? ` for ${answers.place}` : ""}` +
       (answers.year ? `, ${answers.year}.` : ".");
-    const playlist = await createPublicPlaylist(token, userId, playlistName, description);
+    const playlist = await createPublicPlaylist(token, "", playlistName, description);
     await addTracks(token, playlist.id, matched.map((m) => m.uri!));
 
     // 4. A QR code of the public playlist link, so anyone can scan and listen.
