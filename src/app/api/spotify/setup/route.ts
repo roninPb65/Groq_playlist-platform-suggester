@@ -46,13 +46,17 @@ export async function GET(req: NextRequest) {
 
   // Step 1: no code yet -> send the owner to Spotify's consent screen.
   if (!code) {
-     const params = new URLSearchParams({
+    const state = Math.random().toString(36).substring(2, 15);
+
+    const params = new URLSearchParams({
       client_id: clientId,
       response_type: "code",
       redirect_uri: redirectUri(),
       scope: SCOPES,
+      state: state,
       show_dialog: "true",
     });
+
     return NextResponse.redirect(`${AUTHORIZE}?${params.toString()}`);
   }
 
