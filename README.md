@@ -1,15 +1,22 @@
 # Resonance
 
 An AI playlist platform that reconstructs the soundtrack of your life — from where you
-lived and when — and builds a real playlist on your Spotify account.
+lived and when — and gives you a **shareable, scannable** playlist.
 
-- **Reasoning:** Groq (Llama 3.3) turns your signals into a confidence-tagged song list.
-- **Destination:** Spotify Web API resolves each song and creates the playlist.
-- **Bring-your-own-key:** each user supplies their own Groq key in the UI. It stays in the
-  browser tab and is sent only with that user's request — never stored on the server.
+How it works in this build:
 
-> This is a working scaffold, not a finished product. Grounding (news/charts retrieval) and
-> Last.fm similarity are included as ready-to-wire modules — see "Extending" below.
+- **Reasoning:** Groq (Llama 3.3) turns each visitor's answers into a confidence-tagged song list.
+- **One account, no visitor login:** every playlist is created on a single owner Spotify account
+  (yours) and made public. Visitors never log into Spotify.
+- **Sharing:** the result page shows a link and a **QR code**. Anyone can scan it, open the
+  playlist in their own Spotify, and save it if they like it.
+- **Bring-your-own-key:** each visitor supplies their own Groq key in the UI. It stays in the
+  browser tab and is sent only with that request — never stored on the server.
+
+This sidesteps Spotify's Development Mode user limit, because only the owner account ever writes;
+listeners just open a public link.
+
+> Grounding (news/charts retrieval) and Last.fm similarity are included as ready-to-wire modules.
 
 ---
 
@@ -21,83 +28,83 @@ lived and when — and builds a real playlist on your Spotify account.
 
 ## 2. Spotify app setup
 
-In the Spotify dashboard, create an app and copy the **Client ID** and **Client Secret**.
-Add these exact **Redirect URIs**:
+Create an app in the Spotify dashboard and copy the **Client ID** and **Client Secret**.
+Add this **Redirect URI** (used once, to fetch the owner refresh token):
 
-- Local: `http://localhost:3000/api/auth/callback/spotify`
-- Production: `https://YOUR-APP.onrender.com/api/auth/callback/spotify`
+- Production: `https://YOUR-APP.onrender.com/api/spotify/setup`
+- Local: `http://127.0.0.1:3000/api/spotify/setup`
 
-(OAuth fails if the redirect URI isn't registered.) New Spotify apps start in
-**Development Mode** — limited to 25 users you add by hand. To open it up, request a
-quota extension in the dashboard.
+Add the owner account under **User Management** (dev mode allows a few users; the owner needs to
+be allowed to create playlists).
 
-## 3. Local development
+## 3. Environment variables
+
+| Variable | What it is |
+| --- | --- |
+| `APP_URL` | Your public URL, e.g. `https://YOUR-APP.onrender.com` (no trailing slash) |
+| `SPOTIFY_CLIENT_ID` | From the Spotify dashboard |
+| `SPOTIFY_CLIENT_SECRET` | From the Spotify dashboard |
+| `SPOTIFY_REFRESH_TOKEN` | Obtained via the one-time setup below (leave blank at first) |
+| `LASTFM_API_KEY` | Optional |
+
+There is **no** Groq key and **no** Auth.js secret — those are gone in this model.
+
+## 4. One-time: get the owner refresh token
+
+1. Deploy (or run locally) with `APP_URL`, `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET` set.
+2. Visit `{APP_URL}/api/spotify/setup` while logged into Spotify as the account that should own
+   the playlists. Approve the permissions.
+3. It shows a **refresh token**. Copy it into `SPOTIFY_REFRESH_TOKEN` (Render env + your local
+   `.env.local`) and redeploy.
+4. Optional but recommended: delete `src/app/api/spotify/setup/route.ts` afterward.
+
+## 5. Local development
 
 ```bash
 npm install
-cp .env.example .env.local   # then fill in the values
-npm run dev                  # http://localhost:3000
+cp .env.example .env.local   # fill in values
+npm run dev                  # http://127.0.0.1:3000
 ```
 
-Generate `AUTH_SECRET` with: `openssl rand -base64 32`
+Use `127.0.0.1`, not `localhost` — Spotify requires the loopback IP for http redirect URIs.
 
-If pinning `next-auth` fails, install the current beta: `npm i next-auth@beta`
+## 6. Deploy on Render via GitHub
 
-## 4. Deploy on Render via GitHub
+1. Push to GitHub.
+2. Render → **New → Web Service**, connect the repo. It reads `render.yaml`, or set manually:
+   Runtime **Node**, Build `npm ci && npm run build`, Start `npm start`.
+3. Set the environment variables from section 3 (Free instance type).
+4. Do the one-time setup (section 4), then redeploy with `SPOTIFY_REFRESH_TOKEN` in place.
 
-1. Push this repo to GitHub.
-2. In Render: **New → Web Service**, connect the repo. Render reads `render.yaml`, or set
-   manually: Runtime **Node**, Build `npm ci && npm run build`, Start `npm start`.
-3. In the service's **Environment** tab, set:
-   - `AUTH_URL` = `https://YOUR-APP.onrender.com`
-   - `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`
-   - `LASTFM_API_KEY` (optional)
-   - `AUTH_SECRET` is auto-generated by the blueprint; `AUTH_TRUST_HOST` is set to `true`.
-4. Add the production redirect URI to your Spotify app (step 2).
-5. Push to the connected branch — Render auto-deploys.
+**Free-tier note:** the service spins down after ~15 min idle; the first request after a lull
+takes ~50s to wake.
 
-**Free-tier note:** the service spins down after ~15 min idle, so the first request after a
-lull takes ~50s to wake. Fine for a prototype.
+## 7. Key files
 
-## 5. How it works
+- `src/lib/prompt.ts` — curation prompt (reminiscence weighting, diversity, anti-hallucination)
+- `src/lib/groq.ts` — calls the visitor's key, JSON mode, defensive parsing
+- `src/lib/spotify.ts` — owner-token auth, search/resolve, **public** playlist creation
+- `src/app/api/generate/route.ts` — orchestration + QR generation
+- `src/app/api/spotify/setup/route.ts` — one-time owner token bootstrap (deletable after)
 
-```
-Quiz answers ─▶ (optional) grounding ─▶ Groq → JSON song list
-                                              │
-                          Spotify search resolves each to a URI
-                                              │
-                    Create playlist on the user's account, add tracks
-                                              │
-                                  Return link + per-song reasons
-```
+## 8. Extending
 
-Key files:
+- **Grounding (`src/lib/grounding.ts`):** wire a web-search or charts source; the string it
+  returns is passed to Groq as authoritative context. Biggest accuracy lever for non-Western scenes.
+- **Similarity (`src/lib/lastfm.ts`):** Last.fm `track.getSimilar` substitutes for Spotify's removed
+  recommendations. Set `LASTFM_API_KEY` and expand the list before resolving.
+- **"Save to my own Spotify" (optional):** if you later want visitors to save to their own account,
+  add a per-visitor OAuth path alongside this one — but you'll re-enter Spotify's dev-mode limits
+  until you get Extended Quota approval.
 
-- `src/lib/prompt.ts` — the curation prompt (reminiscence weighting, diversity, anti-hallucination)
-- `src/lib/groq.ts` — calls the user's key, JSON mode, defensive parsing
-- `src/lib/spotify.ts` — search/resolve, create playlist, add tracks
-- `src/app/api/generate/route.ts` — orchestration
-- `src/auth.ts` — Auth.js v5 Spotify config + token refresh
+## 9. Security notes
 
-## 6. Extending
-
-- **Grounding (`src/lib/grounding.ts`):** wire a web-search API or a charts/Wikipedia
-  fetch. Whatever string it returns is passed to Groq as authoritative context. This is the
-  single biggest accuracy lever, especially for non-Western / hyper-local scenes.
-- **Similarity (`src/lib/lastfm.ts`):** Spotify removed Recommendations/Audio Features for
-  new apps; Last.fm `track.getSimilar` is a live substitute. Set `LASTFM_API_KEY` and expand
-  the song list before resolving.
-- **Feedback loop:** add thumbs up/down + swaps; persist with Supabase or Neon (free Postgres)
-  rather than Render's free DB, which expires.
-
-## 7. Security notes
-
-- No API keys live in this repo. Your secrets go in Render env vars; the Groq key is per-user
-  runtime input.
-- The user's Groq key is never logged or persisted server-side.
-- `.env*` files are gitignored — keep it that way.
+- No API keys in the repo. Owner secrets live in Render env vars; the Groq key is per-visitor input.
+- The visitor's Groq key is never logged or persisted server-side.
+- The owner refresh token is powerful — keep it only in env vars, never in the repo or logs.
+- `.env*` files are gitignored.
 
 ---
 
-*Technical details reflect platform behavior as of early 2026. Verify Spotify, Groq, and
-Last.fm API terms against their live docs before relying on them.*
+*Technical details reflect platform behavior as of early 2026. Verify Spotify, Groq, and Last.fm
+API terms against their live docs before relying on them.*
