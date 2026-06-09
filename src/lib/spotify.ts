@@ -62,7 +62,11 @@ export async function getOwnerAccessToken(): Promise<string> {
 // FIXED: Authorization check (safe version)
 // ---------------------------------------------------------------------------
 export async function checkSpotifyAuthorization(token: string): Promise<void> {
+  // const me = await spotifyFetch(token, "/me");
+
   const me = await spotifyFetch(token, "/me");
+  console.log("Owner:", me.id);
+  console.log("Playlist owner assumed same user");
 
   if (!me || !me.id) {
     throw new Error(
