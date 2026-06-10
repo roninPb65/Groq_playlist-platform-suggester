@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 export function ApiKeyStep({
   groqKey,
@@ -8,14 +8,23 @@ export function ApiKeyStep({
   setGroqKey,
   onContinue,
 }: {
-  groqKey?: string; // 👈 old prop (keep for compatibility)
-  initialGroqKey?: string; // 👈 new prop (optional)
+  groqKey?: string;
+  initialGroqKey?: string;
   setGroqKey: (v: string) => void;
   onContinue: () => void;
 }) {
-  const [localKey, setLocalKey] = useState(
-    initialGroqKey ?? groqKey ?? "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"
-  );
+  const defaultKey =
+    initialGroqKey ??
+    groqKey ??
+    "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";
+
+  const [localKey, setLocalKey] = useState("");
+
+  // 👇 THIS is the fix (sync when props arrive)
+  useEffect(() => {
+    setLocalKey(defaultKey);
+    setGroqKey(defaultKey);
+  }, [defaultKey]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
