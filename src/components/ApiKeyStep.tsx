@@ -22,7 +22,7 @@ export function ApiKeyStep({
           id="groq"
           type="password"
           placeholder="gsk_..."
-          value="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"
+          value="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"
           autoComplete="off"
           spellCheck={false}
           onChange={(e) => setGroqKey(e.target.value)}
