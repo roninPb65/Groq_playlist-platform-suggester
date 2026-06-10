@@ -14,8 +14,6 @@ export function ApiKeyStep({
   onContinue: () => void;
 }) {
   const defaultKey =
-    initialGroqKey ??
-    groqKey ??
     "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";
 
   const [localKey, setLocalKey] = useState("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");
