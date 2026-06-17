@@ -14,9 +14,9 @@ export function ApiKeyStep({
   onContinue: () => void;
 }) {
   const defaultKey =
-    "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";
+    "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";
 
-  const [localKey, setLocalKey] = useState("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");
+  const [localKey, setLocalKey] = useState("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");
 
   // 👇 THIS is the fix (sync when props arrive)
   useEffect(() => {
